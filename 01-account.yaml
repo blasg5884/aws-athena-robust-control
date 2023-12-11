@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Glue Database and Table
+
+Parameters:
+  BucketName:
+    Description: S3 Bucket Name
+    Type: String
+
+Resources:
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: sample_database
+        LocationUri: !Sub 's3://${BucketName}/'
+
+  GlueTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Description: Glue Table
+        Name: sample_table
+        TableType: EXTERNAL_TABLE
+        PartitionKeys: 
+          - Name: system
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: id
+              Type: bigint
+            - Name: value
+              Type: string
+          Location: !Sub 's3://${BucketName}/sample_table'
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            Parameters:
+              field.delim: ","
+            SerializationLibrary: org.apache.hadoop.hive.serde2.OpenCSVSerde
+
+  IamPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucketLocation
+              - s3:GetObject
+              - s3:ListBucket
+              - s3:ListBucketMultipartUploads
+              - s3:ListMultipartUploadParts
+              - s3:AbortMultipartUpload
+              - s3:PutObject
+            Effect: Allow
+            Resource:
+              - !Sub 'arn:aws:s3:::${BucketName}'
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref BucketName
+                  - '/*/${aws:PrincipalTag/System}/*'
+          - Action:
+              - athena:getQueryResults
+              - athena:startQueryExecution
+              - athena:stopQueryExecution
+              - athena:getQueryExecution
+              - athena:getDataCatalog
+            Effect: Allow
+            Resource:
+              - !Join
+                - ''
+                - - !Sub 'arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/'
+                  - '${aws:PrincipalTag/System}-WorkGroup'
+          - Action:
+              - glue:get*
+            Effect: Allow
+            Resource:
+              - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*'
+              - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*'
+              - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog'
+        Version: '2012-10-17'
+      ManagedPolicyName: SystemAccess
+      Path: /
