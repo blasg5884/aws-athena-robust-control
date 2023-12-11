@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Athena WorkGroup and Glue Partition
+
+Parameters:
+  BucketName:
+    Description: S3 Bucket Name
+    Type: String
+  System:
+    Type: String
+    Description: System ID
+
+Resources:
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Description: !Sub 'WorkGroup for ${System}'
+      Name: !Sub '${System}-WorkGroup'
+      RecursiveDeleteOption: True
+      State: ENABLED
+      WorkGroupConfiguration:
+        PublishCloudWatchMetricsEnabled: True
+        RequesterPaysEnabled: True
+        ResultConfiguration:
+          OutputLocation: !Sub 's3://${BucketName}/output/${System}'
+
+  SampleTablePartition:
+    Type: AWS::Glue::Partition
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: sample_database
+      TableName: sample_table
+      PartitionInput:
+        Values:
+          - !Ref System
+        StorageDescriptor:
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Columns:
+            - Name: system
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub 's3://${BucketName}/sample_table/${System}'
+          SerdeInfo:
+            Parameters:
+              field.delim: ','
+            SerializationLibrary: org.apache.hadoop.hive.serde2.OpenCSVSerde
+
+  SystemRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/SystemAccess'
+      RoleName: !Sub SystemAccess-${System}
+      Tags:
+        - Key: System
+          Value: !Ref System
